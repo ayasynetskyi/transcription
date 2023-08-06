@@ -1,0 +1,121 @@
+service: transcription
+frameworkVersion: "3"
+
+custom:
+  tableName: ${self:service}
+  pythonRequirements:
+    noDeploy:
+      - boto3
+      - botocore
+    slim: true
+    slimPatterns:
+      - '**/*.egg-info*'
+  audioBucket: ${self:service}-records-${sls:stage}
+  transcriptionsBucket: ${self:service}-transcriptions-${sls:stage}
+  processorLambdaName: ${self:service}-${sls:stage}-processor
+
+package:
+  individually: false
+  include:
+    - '!./**'
+    - './transcription/**'
+  exclude:
+    - '**'
+
+provider:
+  name: aws
+  region: eu-west-3
+  runtime: python3.11
+  environment:
+    DYNAMODB_TABLE: ${self:custom.tableName}
+    AUDIO_BUCKET: ${self:custom.audioBucket}
+    TRANSCRIPTION_BUCKET: ${self:custom.transcriptionsBucket}
+    PROCESSOR_LAMBDA: ${self:custom.processorLambdaName}
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          Resource:
+            - Fn::GetAtt: [ TranscriptionJobTable, Arn ]
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:GetObject
+          Resource:
+            - 'arn:aws:s3:::${self:custom.transcriptionsBucket}/*'
+            - 'arn:aws:s3:::${self:custom.audioBucket}/*'
+        - Effect: Allow
+          Action:
+            - s3:ListBucket
+          Resource:
+            - 'arn:aws:s3:::${self:custom.transcriptionsBucket}'
+        - Effect: Allow
+          Action:
+            - transcribe:StartTranscriptionJob
+            - transcribe:GetTranscriptionJob
+          Resource: '*'
+        - Effect: Allow
+          Action:
+            - lambda:InvokeFunction
+            - lambda:InvokeAsync
+          Resource: "*"
+
+
+functions:
+  api:
+    handler: transcription.api.app.handler
+    events:
+      - httpApi: '*'
+  processor:
+    handler: transcription.processor_lambda.handler
+    name: ${self:custom.processorLambdaName}
+  listener:
+    handler: transcription.listener_lambda.handler
+    events:
+      - eventBridge:
+          pattern:
+            source:
+              - aws.transcribe
+            detail-type:
+              - Transcribe Job State Change
+            detail:
+              TranscriptionJobStatus:
+                - COMPLETED
+                - FAILED
+
+
+plugins:
+  - serverless-python-requirements
+
+
+resources:
+  Resources:
+    TranscriptionJobTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: request_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: request_id
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:custom.tableName}
+    TranscriptionsBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.transcriptionsBucket}
+    AudioBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.audioBucket}
