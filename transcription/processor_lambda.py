@@ -15,4 +15,4 @@ def handler(transcription_request: TranscriptionRequest, context) -> None:
     logging_config.dictConfig(settings.LOGGING)
 
     table = boto3.resource("dynamodb").Table(settings.DYNAMODB_TABLE)
-    usecases.start_transption_job(transcription_request, table)
+    usecases.start_transcription_job(transcription_request, table)

@@ -69,7 +69,7 @@ def get_transcription_result(request_id: UUID) -> TranscriptionResult:
 
 def get_transcription_result_from_dynamodb(
     request_id: UUID,
-    table,
+    table: 'Table',
 ) -> TranscriptionResult:
     result = table.get_item(Key={"request_id": str(request_id)})
     if "Item" not in result:
@@ -77,7 +77,7 @@ def get_transcription_result_from_dynamodb(
     return TranscriptionResult(**result["Item"])
 
 
-def start_transption_job(transcription_request: TranscriptionRequest, table: 'Table'):
+def start_transcription_job(transcription_request: TranscriptionRequest, table: 'Table'):
     audio_filename = ""
     if url_path := transcription_request.audio_url.path:
         audio_filename = Path(unquote(url_path)).name
